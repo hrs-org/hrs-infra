@@ -1,0 +1,106 @@
+name: Terraform Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select environment to deploy (uat / prod)"
+        required: true
+        default: "uat"
+        type: choice
+        options:
+          - uat
+          - prod
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    environment: ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: ./env/${{ github.event.inputs.environment }}
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        run: terraform init
+
+      - name: Terraform Validate
+        working-directory: ./env/${{ github.event.inputs.environment }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./env/${{ github.event.inputs.environment }}
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        run: |
+          terraform plan -input=false \
+            -var-file=${{ github.event.inputs.environment }}.tfvars
+
+      # - name: Terraform Apply
+      #   working-directory: ./env/${{ github.event.inputs.environment }}
+      #   env:
+      #     ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+      #     ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+      #     ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      #     ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+      #   run: |
+      #     terraform apply -auto-approve -input=false \
+      #       -var-file=${{ github.event.inputs.environment }}.tfvars
+
+      # - name: Get AKS credentials
+      #   run: |
+      #     az aks get-credentials \
+      #       --resource-group $(cd env/${{ github.event.inputs.environment }} && terraform output -raw resource_group) \
+      #       --name $(cd env/${{ github.event.inputs.environment }} && terraform output -raw aks_name) \
+      #       --overwrite-existing
+
+      # - name: Share outputs with microservices repos
+      #   working-directory: ./env/${{ github.event.inputs.environment }}
+      #   env:
+      #     GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+      #   run: |
+      #     ACR_LOGIN_SERVER=$(terraform output -raw acr_login_server)
+      #     AKS_NAME=$(terraform output -raw aks_name)
+      #     RESOURCE_GROUP=$(terraform output -raw resource_group)
+
+      #     # Share ACR and AKS info with microservices repos
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/gateway-service
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/gateway-service
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/gateway-service
+
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/users-service
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/users-service
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/users-service
+
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/orders-service
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/orders-service
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/orders-service
+
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/store-service
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/store-service
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/store-service
+
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/payments-service
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/payments-service
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/payments-service
