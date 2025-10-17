@@ -65,6 +65,11 @@ resource "azurerm_kubernetes_cluster" "aks" {
     node_count      = 1
     vm_size         = "Standard_B2s"
     os_disk_size_gb = 64
+    upgrade_settings {
+      max_surge                     = "10%"
+      drain_timeout_in_minutes      = 0
+      node_soak_duration_in_minutes = 0
+    }
   }
 
   network_profile {
@@ -86,6 +91,11 @@ resource "azurerm_kubernetes_cluster_node_pool" "usernp" {
   node_count            = var.node_count
   max_pods              = 110
   mode                  = "User"
+  upgrade_settings {
+    max_surge                     = "10%"
+    drain_timeout_in_minutes      = 0
+    node_soak_duration_in_minutes = 0
+  }
 }
 
 resource "azurerm_role_assignment" "acr_pull" {
