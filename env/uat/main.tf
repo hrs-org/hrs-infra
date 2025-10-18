@@ -41,6 +41,15 @@ resource "azurerm_container_registry" "acr" {
   tags                = var.common_tags
 }
 
+resource "azurerm_static_web_app" "web" {
+  name                = "st-${var.project}-web-${var.environment}"
+  resource_group_name = azurerm_resource_group.main.name
+  location            = "East Asia"
+  sku_tier            = "Free"
+  sku_size            = "Free"
+  tags                = var.common_tags
+}
+
 resource "random_string" "dns" {
   length  = 4
   upper   = false
@@ -185,4 +194,13 @@ output "aks_name" {
 
 output "acr_login_server" {
   value = azurerm_container_registry.acr.login_server
+}
+
+output "static_web_app_url" {
+  value = azurerm_static_web_app.web.default_host_name
+}
+
+output "static_web_app_api_key" {
+  value     = azurerm_static_web_app.web.api_key
+  sensitive = true
 }
