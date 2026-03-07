@@ -23,7 +23,6 @@ terraform {
 
 provider "azurerm" {
   features {}
-  subscription_id = "5c9469e7-791b-4904-b189-abd1ac5ef787"
 }
 
 resource "azurerm_resource_group" "main" {
@@ -37,7 +36,7 @@ resource "azurerm_container_registry" "acr" {
   resource_group_name = azurerm_resource_group.main.name
   location            = azurerm_resource_group.main.location
   sku                 = "Basic"
-  admin_enabled       = false
+  admin_enabled       = true
   tags                = var.common_tags
 }
 
@@ -97,7 +96,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "usernp" {
   name                  = "usernp"
   kubernetes_cluster_id = azurerm_kubernetes_cluster.aks.id
   vm_size               = var.node_vm_size
-  node_count            = var.node_count
+  node_count            = 1
   max_pods              = 110
   mode                  = "User"
   upgrade_settings {
@@ -129,49 +128,26 @@ provider "helm" {
   }
 }
 
-resource "kubernetes_namespace" "infra" {
-  metadata { name = "infra" }
+resource "kubernetes_namespace" "uat" {
+  metadata { name = "uat" }
 }
-
-resource "kubernetes_namespace" "gateway" {
-  metadata { name = "gateway" }
-}
-
-resource "kubernetes_namespace" "users" {
-  metadata { name = "users" }
-}
-
-resource "kubernetes_namespace" "orders" {
-  metadata { name = "orders" }
-}
-
-resource "kubernetes_namespace" "store" {
-  metadata { name = "store" }
-}
-
-resource "kubernetes_namespace" "payments" {
-  metadata { name = "payments" }
-}
-
-resource "kubernetes_namespace" "maintenance" {
-  metadata { name = "maintenance" }
-}
-
-# metrics-server is pre-installed in AKS by default, no need to install via Helm
 
 resource "helm_release" "ingress_nginx" {
   name       = "ingress-nginx"
   repository = "https://kubernetes.github.io/ingress-nginx"
   chart      = "ingress-nginx"
-  namespace  = kubernetes_namespace.infra.metadata[0].name
+  namespace  = kubernetes_namespace.uat.metadata[0].name
   version    = var.ingress_nginx_chart_version
 
   values = [
     yamlencode({
       controller = {
-        replicaCount = 1
+        replicaCount = 2
         service = {
           type = "LoadBalancer"
+          annotations = {
+            "service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path" = "/healthz"
+          }
         }
       }
     })
@@ -180,7 +156,7 @@ resource "helm_release" "ingress_nginx" {
   depends_on = [
     azurerm_kubernetes_cluster.aks,
     azurerm_kubernetes_cluster_node_pool.usernp,
-    kubernetes_namespace.infra
+    kubernetes_namespace.uat
   ]
 }
 
@@ -203,4 +179,14 @@ output "static_web_app_url" {
 output "static_web_app_api_key" {
   value     = azurerm_static_web_app.web.api_key
   sensitive = true
+}
+
+output "get_ingress_ip" {
+  value       = "kubectl get svc -n uat ingress-nginx-controller"
+  description = "Run this command to get your public ingress IP"
+}
+
+output "get_credentials" {
+  value       = "az aks get-credentials --resource-group ${azurerm_resource_group.main.name} --name ${azurerm_kubernetes_cluster.aks.name}"
+  description = "Run this command to configure kubectl"
 }
