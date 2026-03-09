@@ -71,7 +71,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   default_node_pool {
     name            = "systemnp"
     node_count      = 1
-    vm_size         = "Standard_B2pts_v2"
+    vm_size         = "Standard_B2ps_v2"
     os_disk_size_gb = 64
     upgrade_settings {
       max_surge                     = "10%"
