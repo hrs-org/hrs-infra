@@ -43,7 +43,7 @@ resource "azurerm_container_registry" "acr" {
 resource "azurerm_static_web_app" "web" {
   name                = "st-${var.project}-web-${var.environment}"
   resource_group_name = azurerm_resource_group.main.name
-  location            = azurerm_resource_group.main.location
+  location            = "East Asia"
   sku_tier            = "Free"
   sku_size            = "Free"
   tags                = var.common_tags
