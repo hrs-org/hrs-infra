@@ -68,39 +68,41 @@ jobs:
           terraform apply -auto-approve -input=false \
             -var-file=${{ github.event.inputs.environment }}.tfvars
 
-      - name: Get AKS credentials
-        run: |
-          az aks get-credentials \
-            --resource-group $(cd env/${{ github.event.inputs.environment }} && terraform output -raw resource_group) \
-            --name $(cd env/${{ github.event.inputs.environment }} && terraform output -raw aks_name) \
-            --overwrite-existing
+      # Commented out - no resources to configure
+      # - name: Get AKS credentials
+      #   run: |
+      #     az aks get-credentials \
+      #       --resource-group $(cd env/${{ github.event.inputs.environment }} && terraform output -raw resource_group) \
+      #       --name $(cd env/${{ github.event.inputs.environment }} && terraform output -raw aks_name) \
+      #       --overwrite-existing
 
-      - name: Share outputs with microservices repos
-        working-directory: ./env/${{ github.event.inputs.environment }}
-        env:
-          GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-        run: |
-          ACR_LOGIN_SERVER=$(terraform output -raw acr_login_server)
-          AKS_NAME=$(terraform output -raw aks_name)
-          RESOURCE_GROUP=$(terraform output -raw resource_group)
-
-          # Share ACR and AKS info with microservices repos
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-gateway
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-gateway
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-gateway
-
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-user-store-service-api
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-user-store-service-api
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-user-store-service-api
-
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-order-service-api
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-order-service-api
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-order-service-api
-
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-inventory-service-api
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-inventory-service-api
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-inventory-service-api
-
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-payment-service-api
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-payment-service-api
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-payment-service-api
+      # Commented out - no outputs to share
+      # - name: Share outputs with microservices repos
+      #   working-directory: ./env/${{ github.event.inputs.environment }}
+      #   env:
+      #     GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+      #   run: |
+      #     ACR_LOGIN_SERVER=$(terraform output -raw acr_login_server)
+      #     AKS_NAME=$(terraform output -raw aks_name)
+      #     RESOURCE_GROUP=$(terraform output -raw resource_group)
+      #
+      #     # Share ACR and AKS info with microservices repos
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-gateway
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-gateway
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-gateway
+      #
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-user-store-service-api
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-user-store-service-api
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-user-store-service-api
+      #
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-order-service-api
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-order-service-api
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-order-service-api
+      #
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-inventory-service-api
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-inventory-service-api
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-inventory-service-api
+      #
+      #     gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-payment-service-api
+      #     gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-payment-service-api
+      #     gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-payment-service-api
