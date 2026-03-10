@@ -43,7 +43,7 @@ resource "azurerm_container_registry" "acr" {
 resource "azurerm_static_web_app" "web" {
   name                = "st-${var.project}-web-${var.environment}"
   resource_group_name = azurerm_resource_group.main.name
-  location            = "East Asia"
+  location            = azurerm_resource_group.main.location
   sku_tier            = "Free"
   sku_size            = "Free"
   tags                = var.common_tags
@@ -71,7 +71,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   default_node_pool {
     name            = "systemnp"
     node_count      = 1
-    vm_size         = "Standard_B2ps_v2"
+    vm_size         = "Standard_B2s_v2"
     os_disk_size_gb = 64
     upgrade_settings {
       max_surge                     = "10%"
