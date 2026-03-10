@@ -85,22 +85,22 @@ jobs:
           RESOURCE_GROUP=$(terraform output -raw resource_group)
 
           # Share ACR and AKS info with microservices repos
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/gateway-service
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/gateway-service
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/gateway-service
+          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-gateway
+          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-gateway
+          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-gateway
 
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/users-service
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/users-service
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/users-service
+          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-user-store-service-api
+          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-user-store-service-api
+          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-user-store-service-api
 
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/orders-service
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/orders-service
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/orders-service
+          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-order-service-api
+          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-order-service-api
+          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-order-service-api
 
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/store-service
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/store-service
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/store-service
+          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-inventory-service-api
+          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-inventory-service-api
+          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-inventory-service-api
 
-          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/payments-service
-          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/payments-service
-          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/payments-service
+          gh secret set ACR_LOGIN_SERVER --body "$ACR_LOGIN_SERVER" --repo hrs-org/hrs-payment-service-api
+          gh secret set AKS_NAME --body "$AKS_NAME" --repo hrs-org/hrs-payment-service-api
+          gh secret set RESOURCE_GROUP --body "$RESOURCE_GROUP" --repo hrs-org/hrs-payment-service-api

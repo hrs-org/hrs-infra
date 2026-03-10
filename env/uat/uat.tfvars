@@ -8,7 +8,7 @@ aks_name           = "hrsm-uat-aks"
 dns_prefix         = "hrsm-uat"
 kubernetes_version = ""
 node_count   = 1
-node_vm_size = "Standard_B2s"
+node_vm_size = "Standard_B2s_v2"
 acr_name = "hrsmuatacr001" # Must be globally unique, lowercase, alphanumeric only
 
 # Helm Chart Versions
