@@ -71,7 +71,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   default_node_pool {
     name            = "systemnp"
     node_count      = 1
-    vm_size         = "Standard_B2s_v2"
+    vm_size         = var.system_node_vm_size
     os_disk_size_gb = 64
     upgrade_settings {
       max_surge                     = "10%"
@@ -96,8 +96,8 @@ resource "azurerm_kubernetes_cluster_node_pool" "usernp" {
   name                  = "usernp"
   kubernetes_cluster_id = azurerm_kubernetes_cluster.aks.id
   vm_size               = var.node_vm_size
-  node_count            = 1
-  max_pods              = 110
+  node_count            = var.node_count
+  max_pods              = var.node_max_pods
   mode                  = "User"
   upgrade_settings {
     max_surge                     = "10%"

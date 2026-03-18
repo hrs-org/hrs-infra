@@ -52,6 +52,18 @@ variable "node_vm_size" {
   default     = "Standard_B2s"
 }
 
+variable "system_node_vm_size" {
+  description = "VM size for system node pool"
+  type        = string
+  default     = "Standard_B2s_v2"
+}
+
+variable "node_max_pods" {
+  description = "Maximum pods per user node"
+  type        = number
+  default     = 60
+}
+
 variable "dns_prefix" {
   description = "DNS prefix for AKS"
   type        = string

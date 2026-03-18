@@ -11,6 +11,15 @@ on:
         options:
           - uat
           - prod
+      action:
+        description: "Terraform action"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
 
 permissions:
   contents: read
@@ -46,7 +55,8 @@ jobs:
         working-directory: ./env/${{ github.event.inputs.environment }}
         run: terraform validate
 
-      - name: Terraform Plan
+      - name: Ensure AKS kubeconfig (best effort)
+        if: ${{ github.event.inputs.action != 'plan' }}
         working-directory: ./env/${{ github.event.inputs.environment }}
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
@@ -54,10 +64,37 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
           ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         run: |
-          terraform plan -input=false \
+          set +e
+          RESOURCE_GROUP=$(terraform output -raw resource_group 2>/dev/null)
+          AKS_NAME=$(terraform output -raw aks_name 2>/dev/null)
+          if [ -n "$RESOURCE_GROUP" ] && [ -n "$AKS_NAME" ]; then
+            if az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" >/dev/null 2>&1; then
+              az aks get-credentials \
+                --resource-group "$RESOURCE_GROUP" \
+                --name "$AKS_NAME" \
+                --overwrite-existing || echo "AKS exists but credentials fetch failed; continuing."
+            else
+              echo "AKS cluster not found or not ready yet. Continuing without kubeconfig."
+            fi
+          else
+            echo "AKS outputs are not available yet. Continuing without kubeconfig."
+          fi
+          set -e
+
+      - name: Terraform Plan
+        if: ${{ github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply' }}
+        working-directory: ./env/${{ github.event.inputs.environment }}
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        run: |
+          terraform plan -input=false -out=tfplan \
             -var-file=${{ github.event.inputs.environment }}.tfvars
 
       - name: Terraform Apply
+        if: ${{ github.event.inputs.action == 'apply' }}
         working-directory: ./env/${{ github.event.inputs.environment }}
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
@@ -65,10 +102,22 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
           ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         run: |
-          terraform apply -auto-approve -input=false \
+          terraform apply -auto-approve -input=false tfplan
+
+      - name: Terraform Destroy
+        if: ${{ github.event.inputs.action == 'destroy' }}
+        working-directory: ./env/${{ github.event.inputs.environment }}
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        run: |
+          terraform destroy -auto-approve -input=false \
             -var-file=${{ github.event.inputs.environment }}.tfvars
 
       - name: Get AKS credentials
+        if: ${{ github.event.inputs.action == 'apply' }}
         run: |
           az aks get-credentials \
             --resource-group $(cd env/${{ github.event.inputs.environment }} && terraform output -raw resource_group) \
@@ -76,6 +125,7 @@ jobs:
             --overwrite-existing
 
       - name: Share outputs with microservices repos
+        if: ${{ github.event.inputs.action == 'apply' }}
         working-directory: ./env/${{ github.event.inputs.environment }}
         env:
           GH_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
