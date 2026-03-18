@@ -1,0 +1,199 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki:3100
+        isDefault: true
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+    providers:
+      - name: hrs-security
+        orgId: 1
+        folder: HRS Security
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-security-dashboard
+data:
+  hrs-security-day4.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "panels": [
+        {
+          "datasource": {"type": "prometheus", "uid": "-- Grafana --"},
+          "gridPos": {"h": 7, "w": 6, "x": 0, "y": 0},
+          "id": 1,
+          "targets": [
+            {"expr": "min((nginx_ingress_controller_ssl_expire_time_seconds - time()) / 86400)", "refId": "A"}
+          ],
+          "title": "Min TLS Cert Days Remaining",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "-- Grafana --"},
+          "gridPos": {"h": 7, "w": 6, "x": 6, "y": 0},
+          "id": 2,
+          "targets": [
+            {"expr": "sum(increase(nginx_ingress_controller_requests{status=~\"495|496|497\"}[5m]))", "refId": "A"}
+          ],
+          "title": "TLS Handshake/Cert Errors (5m)",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "-- Grafana --"},
+          "gridPos": {"h": 7, "w": 6, "x": 12, "y": 0},
+          "id": 3,
+          "targets": [
+            {"expr": "sum(rate(nginx_ingress_controller_requests[5m]))", "refId": "A"}
+          ],
+          "title": "Ingress Requests/sec",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "prometheus", "uid": "-- Grafana --"},
+          "gridPos": {"h": 7, "w": 6, "x": 18, "y": 0},
+          "id": 4,
+          "targets": [
+            {"expr": "histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket[5m])))", "refId": "A"}
+          ],
+          "title": "Ingress p95 Latency (s)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "-- Grafana --"},
+          "gridPos": {"h": 7, "w": 12, "x": 0, "y": 7},
+          "id": 5,
+          "targets": [
+            {"expr": "sum(count_over_time({namespace=\"ingress-nginx\", pod=~\"ingress-nginx-controller.*\"} |~ \"(?i)(ssl_do_handshake\\\\(\\\\) failed|tls handshake|certificate verify failed|no peer certificate|client sent an http request to an https server)\" [5m]))", "refId": "A"}
+          ],
+          "title": "Ingress TLS Errors From Logs (5m)",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "-- Grafana --"},
+          "gridPos": {"h": 7, "w": 12, "x": 12, "y": 7},
+          "id": 6,
+          "targets": [
+            {"expr": "topk(10, sum by (pod) (count_over_time({namespace=\"ingress-nginx\", pod=~\"ingress-nginx-controller.*\"} |~ \"(?i)(ssl_do_handshake\\\\(\\\\) failed|tls handshake|certificate verify failed|no peer certificate)\" [15m])))", "refId": "A"}
+          ],
+          "title": "Top Ingress Pods by TLS Errors (15m)",
+          "type": "bargauge"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "-- Grafana --"},
+          "gridPos": {"h": 7, "w": 12, "x": 0, "y": 14},
+          "id": 7,
+          "targets": [
+            {"expr": "sum(count_over_time({namespace=\"uat\", event_type=~\"gateway.authorization_denied|payment.authorization_denied\"}[5m]))", "refId": "A"}
+          ],
+          "title": "Auth Failures (5m)",
+          "type": "stat"
+        },
+        {
+          "datasource": {"type": "loki", "uid": "-- Grafana --"},
+          "gridPos": {"h": 7, "w": 12, "x": 12, "y": 14},
+          "id": 8,
+          "targets": [
+            {"expr": "sum(count_over_time({namespace=\"uat\", event_type=~\"payment.declined|payment.failed\"}[15m]))", "refId": "A"}
+          ],
+          "title": "Payment Anomalies (15m)",
+          "type": "timeseries"
+        }
+      ],
+      "schemaVersion": 39,
+      "style": "dark",
+      "tags": ["hrs", "security"],
+      "templating": {"list": []},
+      "time": {"from": "now-6h", "to": "now"},
+      "title": "HRS Security Day 4",
+      "version": 2
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.4.2
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-admin-credentials
+                  key: admin-password
+          ports:
+            - containerPort: 3000
+              name: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboard-definitions
+              mountPath: /var/lib/grafana/dashboards
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboard-definitions
+          configMap:
+            name: grafana-security-dashboard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

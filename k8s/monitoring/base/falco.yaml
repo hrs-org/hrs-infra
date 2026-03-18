@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: falco
+  labels:
+    app: falco
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: falco
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces", "pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: falco
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: falco
+subjects:
+  - kind: ServiceAccount
+    name: falco
+    namespace: monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: falco-config
+data:
+  falco.yaml: |
+    engine:
+      kind: modern_ebpf
+    json_output: true
+    json_include_output_property: true
+    priority: debug
+    stdout_output:
+      enabled: true
+    syscall_event_drops:
+      actions:
+        - log
+      rate: 0.03333
+      max_burst: 1000
+    outputs:
+      rate: 1
+      max_burst: 1000
+  falco_rules.local.yaml: |
+    - rule: Terminal Shell In Container
+      desc: Detect interactive shell execution in a container
+      condition: container and spawned_process and shell_procs and proc.tty != 0
+      output: "Terminal shell in container (user=%user.name pod=%k8s.pod.name ns=%k8s.ns.name cmd=%proc.cmdline)"
+      priority: WARNING
+
+    - rule: Write Below Etc In Container
+      desc: Detect writes under /etc in containers
+      condition: container and open_write and fd.name startswith /etc/
+      output: "Container write below /etc (pod=%k8s.pod.name ns=%k8s.ns.name file=%fd.name proc=%proc.name)"
+      priority: WARNING
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: falco
+  labels:
+    app: falco
+spec:
+  selector:
+    matchLabels:
+      app: falco
+  template:
+    metadata:
+      labels:
+        app: falco
+    spec:
+      serviceAccountName: falco
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: falco
+          image: falcosecurity/falco:0.38.2
+          args:
+            - /usr/bin/falco
+            - -c
+            - /etc/falco/falco.yaml
+            - -r
+            - /etc/falco/falco_rules.yaml
+            - -r
+            - /etc/falco/falco_rules.local.yaml
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: dev-fs
+              mountPath: /host/dev
+            - name: proc-fs
+              mountPath: /host/proc
+            - name: boot-fs
+              mountPath: /host/boot
+              readOnly: true
+            - name: lib-modules
+              mountPath: /host/lib/modules
+              readOnly: true
+            - name: usr-fs
+              mountPath: /host/usr
+              readOnly: true
+            - name: etc-fs
+              mountPath: /host/etc
+              readOnly: true
+            - name: containerd-sock
+              mountPath: /host/run/containerd/containerd.sock
+            - name: falco-config
+              mountPath: /etc/falco/falco.yaml
+              subPath: falco.yaml
+            - name: falco-config
+              mountPath: /etc/falco/falco_rules.local.yaml
+              subPath: falco_rules.local.yaml
+      volumes:
+        - name: dev-fs
+          hostPath:
+            path: /dev
+        - name: proc-fs
+          hostPath:
+            path: /proc
+        - name: boot-fs
+          hostPath:
+            path: /boot
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: usr-fs
+          hostPath:
+            path: /usr
+        - name: etc-fs
+          hostPath:
+            path: /etc
+        - name: containerd-sock
+          hostPath:
+            path: /run/containerd/containerd.sock
+        - name: falco-config
+          configMap:
+            name: falco-config
