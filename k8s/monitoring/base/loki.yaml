@@ -42,9 +42,9 @@ kind: ConfigMap
 metadata:
   name: loki-rules
 data:
-  hrs-security-day4.yaml: |
+  hrs-security.yaml: |
     groups:
-      - name: hrs-security-day4
+      - name: hrs-security
         rules:
           - alert: AuthFailureBurst
             expr: sum(count_over_time({namespace="uat", event_type=~"gateway.authorization_denied|payment.authorization_denied"}[5m])) > 10

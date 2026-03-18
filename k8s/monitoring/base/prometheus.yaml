@@ -41,7 +41,7 @@ data:
           - targets: ['hrs-payment-service.uat.svc.cluster.local:80']
   alert-rules.yaml: |
     groups:
-      - name: hrs-day4
+      - name: hrs-alerts
         rules:
           - alert: GatewayHealthEndpointDown
             expr: up{job="gateway-health"} == 0

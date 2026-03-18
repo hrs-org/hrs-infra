@@ -38,7 +38,7 @@ kind: ConfigMap
 metadata:
   name: grafana-security-dashboard
 data:
-  hrs-security-day4.json: |
+  hrs-security.json: |
     {
       "annotations": {"list": []},
       "editable": true,
@@ -129,7 +129,7 @@ data:
       "tags": ["hrs", "security"],
       "templating": {"list": []},
       "time": {"from": "now-6h", "to": "now"},
-      "title": "HRS Security Day 4",
+      "title": "HRS Security",
       "version": 2
     }
 ---
