@@ -1,0 +1,193 @@
+name: Platform Security Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Select environment to deploy (uat / prod)"
+        required: true
+        default: "uat"
+        type: choice
+        options:
+          - uat
+          - prod
+      applyIstioBase:
+        description: "Apply Istio base manifests"
+        required: true
+        default: false
+        type: boolean
+      applyNamespaceOverlay:
+        description: "Apply namespace overlay"
+        required: true
+        default: true
+        type: boolean
+      applySecurityPolicies:
+        description: "Apply mTLS and AuthorizationPolicy manifests"
+        required: true
+        default: true
+        type: boolean
+      applyMonitoringStack:
+        description: "Apply monitoring stack manifests (Loki, Promtail, Prometheus, Grafana, Alertmanager, monitoring ingress)"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy-platform-security:
+    environment: ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init (for outputs)
+        working-directory: ./env/${{ github.event.inputs.environment }}
+        env:
+          ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        run: terraform init
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group $(cd env/${{ github.event.inputs.environment }} && terraform output -raw resource_group) \
+            --name $(cd env/${{ github.event.inputs.environment }} && terraform output -raw aks_name) \
+            --overwrite-existing
+
+      - name: Preflight manifest path checks
+        run: |
+          ISTIO_BASE_FILE="k8s/istio/base/istio-install.generated.yaml"
+          ISTIO_OVERLAY_PATH="k8s/istio/overlays/${{ github.event.inputs.environment }}"
+          SECURITY_PATH="k8s/security/${{ github.event.inputs.environment }}"
+          MONITORING_OVERLAY_PATH="k8s/monitoring/overlays/${{ github.event.inputs.environment }}"
+
+          echo "ISTIO_BASE_FILE=$ISTIO_BASE_FILE" >> "$GITHUB_ENV"
+          echo "ISTIO_OVERLAY_PATH=$ISTIO_OVERLAY_PATH" >> "$GITHUB_ENV"
+          echo "SECURITY_PATH=$SECURITY_PATH" >> "$GITHUB_ENV"
+          echo "MONITORING_OVERLAY_PATH=$MONITORING_OVERLAY_PATH" >> "$GITHUB_ENV"
+
+          if test -f "$ISTIO_BASE_FILE"; then echo "HAS_ISTIO_BASE_FILE=true" >> "$GITHUB_ENV"; else echo "HAS_ISTIO_BASE_FILE=false" >> "$GITHUB_ENV"; fi
+          if test -d "$ISTIO_OVERLAY_PATH"; then echo "HAS_ISTIO_OVERLAY=true" >> "$GITHUB_ENV"; else echo "HAS_ISTIO_OVERLAY=false" >> "$GITHUB_ENV"; fi
+          if test -d "$SECURITY_PATH"; then echo "HAS_SECURITY_PATH=true" >> "$GITHUB_ENV"; else echo "HAS_SECURITY_PATH=false" >> "$GITHUB_ENV"; fi
+          if test -d "$MONITORING_OVERLAY_PATH"; then echo "HAS_MONITORING_OVERLAY=true" >> "$GITHUB_ENV"; else echo "HAS_MONITORING_OVERLAY=false" >> "$GITHUB_ENV"; fi
+
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Istio base file exists: $(test -f \"$ISTIO_BASE_FILE\" && echo yes || echo no)"
+          echo "Istio overlay exists: $(test -d \"$ISTIO_OVERLAY_PATH\" && echo yes || echo no)"
+          echo "Security overlay exists: $(test -d \"$SECURITY_PATH\" && echo yes || echo no)"
+          echo "Monitoring overlay exists: $(test -d \"$MONITORING_OVERLAY_PATH\" && echo yes || echo no)"
+
+      - name: Apply Istio base manifests
+        if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_BASE_FILE == 'true' }}
+        run: |
+          kubectl apply -f "$ISTIO_BASE_FILE"
+
+      - name: Warn if Istio base manifest missing
+        if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_BASE_FILE != 'true' }}
+        run: echo "::warning title=Istio base skipped::Manifest file '$ISTIO_BASE_FILE' does not exist."
+
+      - name: Apply namespace overlay
+        if: ${{ github.event.inputs.applyNamespaceOverlay == 'true' && env.HAS_ISTIO_OVERLAY == 'true' }}
+        run: kubectl apply -k "$ISTIO_OVERLAY_PATH"
+
+      - name: Warn if namespace overlay missing
+        if: ${{ github.event.inputs.applyNamespaceOverlay == 'true' && env.HAS_ISTIO_OVERLAY != 'true' }}
+        run: echo "::warning title=Namespace overlay skipped::Overlay path '$ISTIO_OVERLAY_PATH' does not exist."
+
+      - name: Verify Istio policy CRDs
+        run: kubectl api-resources | grep -Ei 'authorizationpolicy|peerauthentication'
+
+      - name: Apply security policies
+        if: ${{ github.event.inputs.applySecurityPolicies == 'true' && env.HAS_SECURITY_PATH == 'true' }}
+        run: kubectl apply -k "$SECURITY_PATH"
+
+      - name: Warn if security policies overlay missing
+        if: ${{ github.event.inputs.applySecurityPolicies == 'true' && env.HAS_SECURITY_PATH != 'true' }}
+        run: echo "::warning title=Security policies skipped::Overlay path '$SECURITY_PATH' does not exist."
+
+      - name: Validate monitoring secret inputs
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
+        env:
+          ALERTMANAGER_SLACK_WEBHOOK_URL: ${{ secrets.ALERTMANAGER_SLACK_WEBHOOK_URL }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: |
+          missing=0
+          for name in ALERTMANAGER_SLACK_WEBHOOK_URL GRAFANA_ADMIN_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Missing secret::$name is not set in GitHub environment secrets"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Create/update monitoring runtime secrets
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
+        env:
+          ALERTMANAGER_SLACK_WEBHOOK_URL: ${{ secrets.ALERTMANAGER_SLACK_WEBHOOK_URL }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: |
+          kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl -n monitoring create secret generic alertmanager-slack-webhook \
+            --from-literal=slack_webhook_url="$ALERTMANAGER_SLACK_WEBHOOK_URL" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl -n monitoring create secret generic grafana-admin-credentials \
+            --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply monitoring stack
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
+        run: kubectl apply -k "$MONITORING_OVERLAY_PATH"
+
+      - name: Warn if monitoring overlay missing
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY != 'true' }}
+        run: echo "::warning title=Monitoring stack skipped::Overlay path '$MONITORING_OVERLAY_PATH' does not exist."
+
+      - name: Restart workloads in uat namespace
+        if: ${{ github.event.inputs.environment == 'uat' }}
+        run: |
+          if kubectl get namespace uat >/dev/null 2>&1; then
+            kubectl rollout restart deploy -n uat
+          else
+            echo "::warning title=Namespace missing::Namespace 'uat' not found. Restart skipped."
+          fi
+
+      - name: Verify rollout and policy objects
+        run: |
+          TARGET_NS="${{ github.event.inputs.environment }}"
+          if kubectl get namespace "$TARGET_NS" >/dev/null 2>&1; then
+            kubectl get pods -n "$TARGET_NS"
+            kubectl get peerauthentication,authorizationpolicy -n "$TARGET_NS"
+          else
+            echo "::warning title=Namespace missing::Namespace '$TARGET_NS' not found. Verification skipped."
+          fi
+
+      - name: Verify monitoring stack
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
+        run: |
+          if kubectl get namespace monitoring >/dev/null 2>&1; then
+            kubectl get pods -n monitoring
+            kubectl get svc -n monitoring
+            kubectl get ingress -n monitoring
+            kubectl get certificate -n monitoring || true
+          else
+            echo "::warning title=Namespace missing::Namespace 'monitoring' not found. Verification skipped."
+          fi
