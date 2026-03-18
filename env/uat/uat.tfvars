@@ -1,6 +1,6 @@
 project     = "hrsm"
 environment = "uat"
-location    = "Southeast Asia"
+location    = "Central India"
 common_tags = {
   env = "uat"
 }
@@ -8,7 +8,9 @@ aks_name           = "hrsm-uat-aks"
 dns_prefix         = "hrsm-uat"
 kubernetes_version = ""
 node_count   = 1
-node_vm_size = "Standard_B2s_v2"
+system_node_vm_size = "Standard_B2s_v2"
+node_vm_size = "Standard_B4as_v2"
+node_max_pods = 60
 acr_name = "hrsmuatacr001" # Must be globally unique, lowercase, alphanumeric only
 
 # Helm Chart Versions
