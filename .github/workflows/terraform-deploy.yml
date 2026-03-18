@@ -56,6 +56,7 @@ jobs:
         run: terraform validate
 
       - name: Ensure AKS kubeconfig (best effort)
+        if: ${{ github.event.inputs.action != 'plan' }}
         working-directory: ./env/${{ github.event.inputs.environment }}
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
@@ -67,10 +68,14 @@ jobs:
           RESOURCE_GROUP=$(terraform output -raw resource_group 2>/dev/null)
           AKS_NAME=$(terraform output -raw aks_name 2>/dev/null)
           if [ -n "$RESOURCE_GROUP" ] && [ -n "$AKS_NAME" ]; then
-            az aks get-credentials \
-              --resource-group "$RESOURCE_GROUP" \
-              --name "$AKS_NAME" \
-              --overwrite-existing
+            if az aks show --resource-group "$RESOURCE_GROUP" --name "$AKS_NAME" >/dev/null 2>&1; then
+              az aks get-credentials \
+                --resource-group "$RESOURCE_GROUP" \
+                --name "$AKS_NAME" \
+                --overwrite-existing || echo "AKS exists but credentials fetch failed; continuing."
+            else
+              echo "AKS cluster not found or not ready yet. Continuing without kubeconfig."
+            fi
           else
             echo "AKS outputs are not available yet. Continuing without kubeconfig."
           fi
