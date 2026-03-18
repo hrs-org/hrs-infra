@@ -34,7 +34,7 @@ data:
       - job_name: gateway-health
         metrics_path: /health
         static_configs:
-          - targets: ['hrs-gateway-uat.uat.svc.cluster.local:80']
+          - targets: ['hrs-gateway-uat-svc.uat.svc.cluster.local:80']
       - job_name: payment-health
         metrics_path: /health
         static_configs:
@@ -98,6 +98,11 @@ data:
               summary: High ingress p95 latency
               description: Ingress p95 request latency is above 1 second.
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -112,6 +117,7 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus
       containers:
         - name: prometheus
           image: prom/prometheus:v2.52.0
