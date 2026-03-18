@@ -101,6 +101,10 @@ jobs:
         if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_BASE_FILE != 'true' }}
         run: echo "::warning title=Istio base skipped::Manifest file '$ISTIO_BASE_FILE' does not exist."
 
+      - name: Ensure istio-system namespace exists
+        if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_BASE_FILE == 'true' }}
+        run: kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Apply namespace overlay
         if: ${{ github.event.inputs.applyNamespaceOverlay == 'true' && env.HAS_ISTIO_OVERLAY == 'true' }}
         run: kubectl apply -k "$ISTIO_OVERLAY_PATH"
