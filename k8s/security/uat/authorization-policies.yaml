@@ -1,0 +1,100 @@
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-inventory
+  namespace: uat
+spec:
+  selector:
+    matchLabels:
+      app: hrs-inventory-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/uat/sa/hrs-gateway-sa
+              - cluster.local/ns/uat/sa/hrs-maintenance-service-sa
+              - cluster.local/ns/uat/sa/hrs-order-service-sa
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-maintenance
+  namespace: uat
+spec:
+  selector:
+    matchLabels:
+      app: hrs-maintenance-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/uat/sa/hrs-gateway-sa
+              - cluster.local/ns/uat/sa/hrs-order-service-sa
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-order
+  namespace: uat
+spec:
+  selector:
+    matchLabels:
+      app: hrs-order-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/uat/sa/hrs-gateway-sa
+              - cluster.local/ns/uat/sa/hrs-payment-service-sa
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-payment
+  namespace: uat
+spec:
+  selector:
+    matchLabels:
+      app: hrs-payment-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/uat/sa/hrs-gateway-sa
+              - cluster.local/ns/uat/sa/hrs-order-service-sa
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-email
+  namespace: uat
+spec:
+  selector:
+    matchLabels:
+      app: hrs-email-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/uat/sa/hrs-gateway-sa
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-to-user
+  namespace: uat
+spec:
+  selector:
+    matchLabels:
+      app: hrs-user-service
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/uat/sa/hrs-gateway-sa
