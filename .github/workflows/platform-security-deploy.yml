@@ -69,6 +69,16 @@ jobs:
             --name $(cd env/${{ github.event.inputs.environment }} && terraform output -raw aks_name) \
             --overwrite-existing
 
+      - name: Label namespace for Istio sidecar injection
+        run: |
+          TARGET_NS="${{ github.event.inputs.environment }}"
+          kubectl label namespace "$TARGET_NS" istio-injection=enabled --overwrite
+
+      - name: Disable sidecar injection on ingress-nginx-controller
+        run: |
+          kubectl patch deploy -n ${{ github.event.inputs.environment }} ingress-nginx-controller \
+            --type merge -p '{"spec":{"template":{"metadata":{"annotations":{"sidecar.istio.io/inject":"false"}}}}}'
+
       - name: Preflight manifest path checks
         run: |
           ISTIO_BASE_FILE="k8s/istio/base/istio-install.generated.yaml"
@@ -161,6 +171,23 @@ jobs:
         if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
         run: kubectl apply -k "$MONITORING_OVERLAY_PATH"
 
+      - name: Deploy Falco via Helm
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
+        run: |
+          kubectl -n monitoring delete daemonset falco --ignore-not-found=true
+          kubectl -n monitoring delete configmap falco-config --ignore-not-found=true
+          kubectl -n monitoring delete serviceaccount falco --ignore-not-found=true
+          kubectl delete clusterrole falco --ignore-not-found=true
+          kubectl delete clusterrolebinding falco --ignore-not-found=true
+
+          helm repo add falcosecurity https://falcosecurity.github.io/charts
+          helm repo update
+
+          helm upgrade --install falco falcosecurity/falco \
+            -n monitoring \
+            --create-namespace \
+            -f k8s/monitoring/falco-values.yaml
+
       - name: Warn if monitoring overlay missing
         if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY != 'true' }}
         run: echo "::warning title=Monitoring stack skipped::Overlay path '$MONITORING_OVERLAY_PATH' does not exist."
@@ -189,6 +216,7 @@ jobs:
         run: |
           if kubectl get namespace monitoring >/dev/null 2>&1; then
             kubectl get pods -n monitoring
+            kubectl get ds -n monitoring falco
             kubectl get svc -n monitoring
             kubectl get ingress -n monitoring
             kubectl get certificate -n monitoring || true
