@@ -1,0 +1,124 @@
+podAnnotations:
+  sidecar.istio.io/inject: "false"
+
+alertmanager:
+  enabled: false
+
+kube-state-metrics:
+  enabled: false
+
+prometheus-node-exporter:
+  enabled: false
+
+prometheus-pushgateway:
+  enabled: false
+
+server:
+  persistentVolume:
+    enabled: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+serverFiles:
+  prometheus.yml:
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+                - alertmanager.monitoring.svc.cluster.local:9093
+    rule_files:
+      - /etc/config/alert-rules.yaml
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets:
+              - localhost:9090
+      - job_name: ingress-nginx-metrics
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: uat
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: ingress-nginx-controller
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: metrics|prometheus
+      - job_name: gateway-health
+        metrics_path: /health
+        static_configs:
+          - targets:
+              - hrs-gateway-uat-svc.uat.svc.cluster.local:80
+      - job_name: payment-health
+        metrics_path: /health
+        static_configs:
+          - targets:
+              - hrs-payment-service.uat.svc.cluster.local:80
+  alert-rules.yaml:
+    groups:
+      - name: hrs-alerts
+        rules:
+          - alert: GatewayHealthEndpointDown
+            expr: up{job="gateway-health"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: Gateway health endpoint unavailable
+          - alert: PaymentHealthEndpointDown
+            expr: up{job="payment-health"} == 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: Payment health endpoint unavailable
+          - alert: IngressMetricsTargetDown
+            expr: up{job="ingress-nginx-metrics"} == 0
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: Ingress metrics target unavailable
+              description: Prometheus cannot scrape ingress-nginx metrics endpoint.
+          - alert: IngressTlsCertificateExpiringSoon
+            expr: min(nginx_ingress_controller_ssl_expire_time_seconds - time()) < 604800
+            for: 10m
+            labels:
+              severity: critical
+            annotations:
+              summary: Ingress TLS certificate expiring in less than 7 days
+              description: At least one ingress certificate will expire in under 7 days.
+          - alert: IngressTlsCertificateExpiringWarning
+            expr: min(nginx_ingress_controller_ssl_expire_time_seconds - time()) < 2592000
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: Ingress TLS certificate expiring in less than 30 days
+              description: At least one ingress certificate will expire in under 30 days.
+          - alert: IngressTlsHandshakeErrorsHigh
+            expr: sum(increase(nginx_ingress_controller_requests{status=~"495|496|497"}[5m])) > 10
+            for: 5m
+            labels:
+              severity: high
+            annotations:
+              summary: Elevated ingress TLS handshake/certificate errors
+              description: Ingress is returning high TLS-related status codes (495/496/497).
+          - alert: IngressHighP95Latency
+            expr: histogram_quantile(0.95, sum by (le) (rate(nginx_ingress_controller_request_duration_seconds_bucket[5m]))) > 1
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: High ingress p95 latency
+              description: Ingress p95 request latency is above 1 second.

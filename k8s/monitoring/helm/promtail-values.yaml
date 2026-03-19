@@ -1,0 +1,32 @@
+podAnnotations:
+  sidecar.istio.io/inject: "false"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+config:
+  clients:
+    - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+  snippets:
+    pipelineStages:
+      - cri: {}
+      - match:
+          selector: '{namespace="uat"}'
+          stages:
+            - json:
+                expressions:
+                  event_type: event_type
+                  correlation_id: correlation_id
+                  route_id: route_id
+                  cluster_id: cluster_id
+                  required_permission: required_permission
+            - labels:
+                event_type:
+                route_id:
+                cluster_id:
+                required_permission:
