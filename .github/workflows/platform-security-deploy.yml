@@ -85,18 +85,21 @@ jobs:
       - name: Preflight manifest path checks
         run: |
           ISTIO_BASE_FILE="k8s/istio/base/istio-install.generated.yaml"
+          ISTIO_NAMESPACE_FILE="k8s/istio/base/istio-system-namespace.yaml"
           ISTIO_OVERLAY_PATH="k8s/istio/overlays/${{ github.event.inputs.environment }}"
           SECURITY_PATH="k8s/security/${{ github.event.inputs.environment }}"
           MONITORING_HELM_VALUES_PATH="k8s/monitoring/helm"
           FALCO_HELM_VALUES_FILE="k8s/monitoring/falco-values.yaml"
 
           echo "ISTIO_BASE_FILE=$ISTIO_BASE_FILE" >> "$GITHUB_ENV"
+          echo "ISTIO_NAMESPACE_FILE=$ISTIO_NAMESPACE_FILE" >> "$GITHUB_ENV"
           echo "ISTIO_OVERLAY_PATH=$ISTIO_OVERLAY_PATH" >> "$GITHUB_ENV"
           echo "SECURITY_PATH=$SECURITY_PATH" >> "$GITHUB_ENV"
           echo "MONITORING_HELM_VALUES_PATH=$MONITORING_HELM_VALUES_PATH" >> "$GITHUB_ENV"
           echo "FALCO_HELM_VALUES_FILE=$FALCO_HELM_VALUES_FILE" >> "$GITHUB_ENV"
 
           if test -f "$ISTIO_BASE_FILE"; then echo "HAS_ISTIO_BASE_FILE=true" >> "$GITHUB_ENV"; else echo "HAS_ISTIO_BASE_FILE=false" >> "$GITHUB_ENV"; fi
+          if test -f "$ISTIO_NAMESPACE_FILE"; then echo "HAS_ISTIO_NAMESPACE_FILE=true" >> "$GITHUB_ENV"; else echo "HAS_ISTIO_NAMESPACE_FILE=false" >> "$GITHUB_ENV"; fi
           if test -d "$ISTIO_OVERLAY_PATH"; then echo "HAS_ISTIO_OVERLAY=true" >> "$GITHUB_ENV"; else echo "HAS_ISTIO_OVERLAY=false" >> "$GITHUB_ENV"; fi
           if test -d "$SECURITY_PATH"; then echo "HAS_SECURITY_PATH=true" >> "$GITHUB_ENV"; else echo "HAS_SECURITY_PATH=false" >> "$GITHUB_ENV"; fi
           if test -f "$MONITORING_HELM_VALUES_PATH/prometheus-values.yaml" && \
@@ -111,10 +114,19 @@ jobs:
           fi
 
           echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Istio namespace file exists: $(test -f \"$ISTIO_NAMESPACE_FILE\" && echo yes || echo no)"
           echo "Istio base file exists: $(test -f \"$ISTIO_BASE_FILE\" && echo yes || echo no)"
           echo "Istio overlay exists: $(test -d \"$ISTIO_OVERLAY_PATH\" && echo yes || echo no)"
           echo "Security overlay exists: $(test -d \"$SECURITY_PATH\" && echo yes || echo no)"
           echo "Monitoring Helm values path exists: $(test -d \"$MONITORING_HELM_VALUES_PATH\" && echo yes || echo no)"
+
+      - name: Apply Istio namespace manifest
+        if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_NAMESPACE_FILE == 'true' }}
+        run: kubectl apply -f "$ISTIO_NAMESPACE_FILE"
+
+      - name: Ensure istio-system namespace exists (fallback)
+        if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_NAMESPACE_FILE != 'true' }}
+        run: kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply Istio base manifests
         if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_BASE_FILE == 'true' }}
@@ -124,10 +136,6 @@ jobs:
       - name: Warn if Istio base manifest missing
         if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_BASE_FILE != 'true' }}
         run: echo "::warning title=Istio base skipped::Manifest file '$ISTIO_BASE_FILE' does not exist."
-
-      - name: Ensure istio-system namespace exists
-        if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_BASE_FILE == 'true' }}
-        run: kubectl create namespace istio-system --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Apply namespace overlay
         if: ${{ github.event.inputs.applyNamespaceOverlay == 'true' && env.HAS_ISTIO_OVERLAY == 'true' }}

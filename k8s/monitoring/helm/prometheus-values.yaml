@@ -55,6 +55,38 @@ serverFiles:
           - source_labels: [__meta_kubernetes_endpoint_port_name]
             action: keep
             regex: metrics|prometheus
+      - job_name: falco-metrics
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - monitoring
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: monitoring
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: falco-metrics
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: metrics
+      - job_name: falcosidekick-metrics
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - monitoring
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace]
+            action: keep
+            regex: monitoring
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: falco-falcosidekick
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
   alert-rules.yaml:
     groups:
       - name: hrs-alerts
