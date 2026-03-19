@@ -188,6 +188,7 @@ jobs:
           kubectl -n monitoring delete deploy prometheus grafana loki alertmanager --ignore-not-found=true
           kubectl -n monitoring delete ds promtail --ignore-not-found=true
           kubectl -n monitoring delete svc prometheus grafana loki alertmanager --ignore-not-found=true
+          kubectl -n monitoring delete ingress grafana-ingress-uat --ignore-not-found=true
           kubectl -n monitoring delete configmap prometheus-config grafana-datasources grafana-dashboard-provider grafana-security-dashboard loki-config loki-rules promtail-config alertmanager-config --ignore-not-found=true
           kubectl delete clusterrole promtail --ignore-not-found=true
           kubectl delete clusterrolebinding promtail --ignore-not-found=true
