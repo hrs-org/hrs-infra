@@ -276,7 +276,7 @@ jobs:
             kubectl get ingress -n monitoring
             kubectl get certificate -n monitoring || true
 
-            PROM_POD="$(kubectl get pods -n monitoring -l app=prometheus,component=server -o jsonpath='{.items[0].metadata.name}')"
+            PROM_POD="$(kubectl get pods -n monitoring -o name | grep '^pod/prometheus-server-' | head -n1 | cut -d/ -f2)"
             if [ -z "$PROM_POD" ]; then
               echo "::error title=Prometheus missing::No prometheus server pod found in monitoring namespace"
               exit 1
