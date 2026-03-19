@@ -1,5 +1,5 @@
 podAnnotations:
-  sidecar.istio.io/inject: "false"
+  sidecar.istio.io/inject: "true"
 
 alertmanager:
   enabled: false
@@ -14,6 +14,8 @@ prometheus-pushgateway:
   enabled: false
 
 server:
+  podAnnotations:
+    sidecar.istio.io/inject: "true"
   persistentVolume:
     enabled: false
   resources:
@@ -24,11 +26,13 @@ server:
       cpu: 500m
       memory: 512Mi
 
+scrapeConfigs:
+  kubernetes-api-servers:
+    tls_config:
+      server_name: kubernetes
+
 serverFiles:
   prometheus.yml:
-    global:
-      scrape_interval: 15s
-      evaluation_interval: 15s
     alerting:
       alertmanagers:
         - static_configs:
@@ -37,10 +41,6 @@ serverFiles:
     rule_files:
       - /etc/config/alert-rules.yaml
     scrape_configs:
-      - job_name: prometheus
-        static_configs:
-          - targets:
-              - localhost:9090
       - job_name: ingress-nginx-metrics
         kubernetes_sd_configs:
           - role: endpoints
@@ -54,34 +54,10 @@ serverFiles:
           - source_labels: [__meta_kubernetes_endpoint_port_name]
             action: keep
             regex: metrics|prometheus
-      - job_name: gateway-health
-        metrics_path: /health
-        static_configs:
-          - targets:
-              - hrs-gateway-uat-svc.uat.svc.cluster.local:80
-      - job_name: payment-health
-        metrics_path: /health
-        static_configs:
-          - targets:
-              - hrs-payment-service.uat.svc.cluster.local:80
   alert-rules.yaml:
     groups:
       - name: hrs-alerts
         rules:
-          - alert: GatewayHealthEndpointDown
-            expr: up{job="gateway-health"} == 0
-            for: 2m
-            labels:
-              severity: critical
-            annotations:
-              summary: Gateway health endpoint unavailable
-          - alert: PaymentHealthEndpointDown
-            expr: up{job="payment-health"} == 0
-            for: 2m
-            labels:
-              severity: critical
-            annotations:
-              summary: Payment health endpoint unavailable
           - alert: IngressMetricsTargetDown
             expr: up{job="ingress-nginx-metrics"} == 0
             for: 5m

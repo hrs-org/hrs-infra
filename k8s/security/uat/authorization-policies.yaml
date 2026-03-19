@@ -66,14 +66,6 @@ spec:
             principals:
               - cluster.local/ns/uat/sa/hrs-gateway-sa
               - cluster.local/ns/uat/sa/hrs-order-service-sa
-    - from:
-        - source:
-            principals:
-              - cluster.local/ns/monitoring/sa/prometheus
-      to:
-        - operation:
-            methods: ["GET"]
-            paths: ["/health"]
 ---
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy

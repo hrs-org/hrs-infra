@@ -172,6 +172,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
         run: |
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace monitoring istio-injection=enabled --overwrite
 
           kubectl -n monitoring create secret generic alertmanager-slack-webhook \
             --from-literal=slack_webhook_url="$ALERTMANAGER_SLACK_WEBHOOK_URL" \
@@ -274,6 +275,17 @@ jobs:
             helm list -n monitoring
             kubectl get ingress -n monitoring
             kubectl get certificate -n monitoring || true
+
+            PROM_POD="$(kubectl get pods -n monitoring -l app=prometheus,component=server -o jsonpath='{.items[0].metadata.name}')"
+            if [ -z "$PROM_POD" ]; then
+              echo "::error title=Prometheus missing::No prometheus server pod found in monitoring namespace"
+              exit 1
+            fi
+
+            kubectl get pod -n monitoring "$PROM_POD" -o jsonpath='{.metadata.annotations.sidecar\.istio\.io/status}' | grep -q 'istio-proxy'
+            echo "Prometheus sidecar check passed for pod: $PROM_POD"
+
+            kubectl run prom-down-count --rm -i --restart=Never -n monitoring --image=curlimages/curl:8.8.0 --command -- sh -c 'DOWN=$(curl -sS http://prometheus-server.monitoring.svc.cluster.local/api/v1/targets?state=active | grep -o '"'"'"health":"down"'"'"' | wc -l); echo "active_down_targets=$DOWN"; [ "$DOWN" -eq 0 ]'
           else
             echo "::warning title=Namespace missing::Namespace 'monitoring' not found. Verification skipped."
           fi
