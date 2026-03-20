@@ -17,7 +17,8 @@ server:
   podAnnotations:
     sidecar.istio.io/inject: "true"
   persistentVolume:
-    enabled: false
+    enabled: true
+    size: 20Gi
   resources:
     requests:
       cpu: 100m

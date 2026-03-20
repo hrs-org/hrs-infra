@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - service-accounts.yaml
   - peer-authentication-strict.yaml
+  - peer-authentication-gateway-permissive.yaml
   - authorization-policies.yaml

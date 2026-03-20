@@ -82,6 +82,7 @@ spec:
         - source:
             principals:
               - cluster.local/ns/uat/sa/hrs-gateway-sa
+              - cluster.local/ns/uat/sa/hrs-user-service-sa
 ---
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
