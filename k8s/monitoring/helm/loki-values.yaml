@@ -1,0 +1,67 @@
+deploymentMode: SingleBinary
+
+podAnnotations:
+  sidecar.istio.io/inject: "false"
+
+loki:
+  auth_enabled: false
+  containerSecurityContext:
+    readOnlyRootFilesystem: false
+  commonConfig:
+    path_prefix: /tmp/loki
+    replication_factor: 1
+  storage:
+    type: filesystem
+    bucketNames:
+      chunks: loki-chunks
+      ruler: loki-ruler
+      admin: loki-admin
+    filesystem:
+      chunks_directory: /tmp/loki/chunks
+      rules_directory: /tmp/loki/rules
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+  rulerConfig:
+    enable_api: true
+    storage:
+      type: local
+      local:
+        directory: /loki/rules
+    alertmanager_url: http://alertmanager.monitoring.svc.cluster.local:9093
+    enable_alertmanager_v2: true
+    rule_path: /tmp/loki/rules-temp
+  limits_config:
+    retention_period: 168h
+    allow_structured_metadata: true
+
+singleBinary:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  persistence:
+    enabled: true
+    size: 30Gi
+
+read:
+  replicas: 0
+
+write:
+  replicas: 0
+
+backend:
+  replicas: 0
+
+gateway:
+  enabled: false

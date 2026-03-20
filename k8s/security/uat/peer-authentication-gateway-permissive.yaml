@@ -1,0 +1,11 @@
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: hrs-gateway-permissive
+  namespace: uat
+spec:
+  selector:
+    matchLabels:
+      app: hrs-gateway
+  mtls:
+    mode: PERMISSIVE

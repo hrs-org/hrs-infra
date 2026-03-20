@@ -27,7 +27,7 @@ on:
         default: true
         type: boolean
       applyMonitoringStack:
-        description: "Apply monitoring stack manifests (Loki, Promtail, Prometheus, Grafana, Alertmanager, monitoring ingress)"
+        description: "Deploy monitoring stack via Helm (Loki, Promtail, Prometheus, Grafana, Alertmanager, Falco)"
         required: true
         default: false
         type: boolean
@@ -53,6 +53,9 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
       - name: Terraform Init (for outputs)
         working-directory: ./env/${{ github.event.inputs.environment }}
         env:
@@ -69,28 +72,49 @@ jobs:
             --name $(cd env/${{ github.event.inputs.environment }} && terraform output -raw aks_name) \
             --overwrite-existing
 
+      - name: Label namespace for Istio sidecar injection
+        run: |
+          TARGET_NS="${{ github.event.inputs.environment }}"
+          kubectl label namespace "$TARGET_NS" istio-injection=enabled --overwrite
+
+      - name: Disable sidecar injection on ingress-nginx-controller
+        run: |
+          kubectl patch deploy -n ${{ github.event.inputs.environment }} ingress-nginx-controller \
+            --type merge -p '{"spec":{"template":{"metadata":{"annotations":{"sidecar.istio.io/inject":"false"}}}}}'
+
       - name: Preflight manifest path checks
         run: |
           ISTIO_BASE_FILE="k8s/istio/base/istio-install.generated.yaml"
           ISTIO_OVERLAY_PATH="k8s/istio/overlays/${{ github.event.inputs.environment }}"
           SECURITY_PATH="k8s/security/${{ github.event.inputs.environment }}"
-          MONITORING_OVERLAY_PATH="k8s/monitoring/overlays/${{ github.event.inputs.environment }}"
+          MONITORING_HELM_VALUES_PATH="k8s/monitoring/helm"
+          FALCO_HELM_VALUES_FILE="k8s/monitoring/falco-values.yaml"
 
           echo "ISTIO_BASE_FILE=$ISTIO_BASE_FILE" >> "$GITHUB_ENV"
           echo "ISTIO_OVERLAY_PATH=$ISTIO_OVERLAY_PATH" >> "$GITHUB_ENV"
           echo "SECURITY_PATH=$SECURITY_PATH" >> "$GITHUB_ENV"
-          echo "MONITORING_OVERLAY_PATH=$MONITORING_OVERLAY_PATH" >> "$GITHUB_ENV"
+          echo "MONITORING_HELM_VALUES_PATH=$MONITORING_HELM_VALUES_PATH" >> "$GITHUB_ENV"
+          echo "FALCO_HELM_VALUES_FILE=$FALCO_HELM_VALUES_FILE" >> "$GITHUB_ENV"
 
           if test -f "$ISTIO_BASE_FILE"; then echo "HAS_ISTIO_BASE_FILE=true" >> "$GITHUB_ENV"; else echo "HAS_ISTIO_BASE_FILE=false" >> "$GITHUB_ENV"; fi
           if test -d "$ISTIO_OVERLAY_PATH"; then echo "HAS_ISTIO_OVERLAY=true" >> "$GITHUB_ENV"; else echo "HAS_ISTIO_OVERLAY=false" >> "$GITHUB_ENV"; fi
           if test -d "$SECURITY_PATH"; then echo "HAS_SECURITY_PATH=true" >> "$GITHUB_ENV"; else echo "HAS_SECURITY_PATH=false" >> "$GITHUB_ENV"; fi
-          if test -d "$MONITORING_OVERLAY_PATH"; then echo "HAS_MONITORING_OVERLAY=true" >> "$GITHUB_ENV"; else echo "HAS_MONITORING_OVERLAY=false" >> "$GITHUB_ENV"; fi
+          if test -f "$MONITORING_HELM_VALUES_PATH/prometheus-values.yaml" && \
+             test -f "$MONITORING_HELM_VALUES_PATH/alertmanager-values.yaml" && \
+             test -f "$MONITORING_HELM_VALUES_PATH/loki-values.yaml" && \
+             test -f "$MONITORING_HELM_VALUES_PATH/promtail-values.yaml" && \
+             test -f "$MONITORING_HELM_VALUES_PATH/grafana-values.yaml" && \
+             test -f "$FALCO_HELM_VALUES_FILE"; then
+            echo "HAS_MONITORING_HELM_VALUES=true" >> "$GITHUB_ENV"
+          else
+            echo "HAS_MONITORING_HELM_VALUES=false" >> "$GITHUB_ENV"
+          fi
 
           echo "Environment: ${{ github.event.inputs.environment }}"
           echo "Istio base file exists: $(test -f \"$ISTIO_BASE_FILE\" && echo yes || echo no)"
           echo "Istio overlay exists: $(test -d \"$ISTIO_OVERLAY_PATH\" && echo yes || echo no)"
           echo "Security overlay exists: $(test -d \"$SECURITY_PATH\" && echo yes || echo no)"
-          echo "Monitoring overlay exists: $(test -d \"$MONITORING_OVERLAY_PATH\" && echo yes || echo no)"
+          echo "Monitoring Helm values path exists: $(test -d \"$MONITORING_HELM_VALUES_PATH\" && echo yes || echo no)"
 
       - name: Apply Istio base manifests
         if: ${{ github.event.inputs.applyIstioBase == 'true' && env.HAS_ISTIO_BASE_FILE == 'true' }}
@@ -125,7 +149,7 @@ jobs:
         run: echo "::warning title=Security policies skipped::Overlay path '$SECURITY_PATH' does not exist."
 
       - name: Validate monitoring secret inputs
-        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_HELM_VALUES == 'true' }}
         env:
           ALERTMANAGER_SLACK_WEBHOOK_URL: ${{ secrets.ALERTMANAGER_SLACK_WEBHOOK_URL }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
@@ -142,28 +166,85 @@ jobs:
           fi
 
       - name: Create/update monitoring runtime secrets
-        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_HELM_VALUES == 'true' }}
         env:
           ALERTMANAGER_SLACK_WEBHOOK_URL: ${{ secrets.ALERTMANAGER_SLACK_WEBHOOK_URL }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
         run: |
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+          kubectl label namespace monitoring istio-injection=enabled --overwrite
 
           kubectl -n monitoring create secret generic alertmanager-slack-webhook \
             --from-literal=slack_webhook_url="$ALERTMANAGER_SLACK_WEBHOOK_URL" \
             --dry-run=client -o yaml | kubectl apply -f -
 
           kubectl -n monitoring create secret generic grafana-admin-credentials \
+            --from-literal=admin-user="admin" \
             --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD" \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Apply monitoring stack
-        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
-        run: kubectl apply -k "$MONITORING_OVERLAY_PATH"
+      - name: Deploy monitoring stack via Helm
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_HELM_VALUES == 'true' }}
+        run: |
+          kubectl -n monitoring delete deploy prometheus grafana loki alertmanager --ignore-not-found=true
+          kubectl -n monitoring delete ds promtail --ignore-not-found=true
+          kubectl -n monitoring delete svc prometheus grafana loki alertmanager --ignore-not-found=true
+          kubectl -n monitoring delete ingress grafana-ingress-uat --ignore-not-found=true
+          kubectl -n monitoring delete configmap prometheus-config grafana-datasources grafana-dashboard-provider grafana-security-dashboard loki-config loki-rules promtail-config alertmanager-config --ignore-not-found=true
+          kubectl delete clusterrole promtail --ignore-not-found=true
+          kubectl delete clusterrolebinding promtail --ignore-not-found=true
+          kubectl -n monitoring delete sa promtail --ignore-not-found=true
 
-      - name: Warn if monitoring overlay missing
-        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY != 'true' }}
-        run: echo "::warning title=Monitoring stack skipped::Overlay path '$MONITORING_OVERLAY_PATH' does not exist."
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo add falcosecurity https://falcosecurity.github.io/charts
+          helm repo update
+
+          helm upgrade --install alertmanager prometheus-community/alertmanager \
+            -n monitoring \
+            --create-namespace \
+            -f k8s/monitoring/helm/alertmanager-values.yaml
+
+          helm upgrade --install prometheus prometheus-community/prometheus \
+            -n monitoring \
+            --create-namespace \
+            -f k8s/monitoring/helm/prometheus-values.yaml
+
+          helm upgrade --install loki grafana/loki \
+            -n monitoring \
+            --create-namespace \
+            -f k8s/monitoring/helm/loki-values.yaml
+
+          helm upgrade --install promtail grafana/promtail \
+            -n monitoring \
+            --create-namespace \
+            -f k8s/monitoring/helm/promtail-values.yaml
+
+          helm upgrade --install grafana grafana/grafana \
+            -n monitoring \
+            --create-namespace \
+            -f k8s/monitoring/helm/grafana-values.yaml
+
+      - name: Deploy Falco via Helm
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_HELM_VALUES == 'true' }}
+        run: |
+          kubectl -n monitoring delete daemonset falco --ignore-not-found=true
+          kubectl -n monitoring delete configmap falco-config --ignore-not-found=true
+          kubectl -n monitoring delete serviceaccount falco --ignore-not-found=true
+          kubectl delete clusterrole falco --ignore-not-found=true
+          kubectl delete clusterrolebinding falco --ignore-not-found=true
+
+          helm repo add falcosecurity https://falcosecurity.github.io/charts
+          helm repo update
+
+          helm upgrade --install falco falcosecurity/falco \
+            -n monitoring \
+            --create-namespace \
+            -f "$FALCO_HELM_VALUES_FILE"
+
+      - name: Warn if monitoring Helm values missing
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_HELM_VALUES != 'true' }}
+        run: echo "::warning title=Monitoring stack skipped::One or more Helm values files are missing under '$MONITORING_HELM_VALUES_PATH'."
 
       - name: Restart workloads in uat namespace
         if: ${{ github.event.inputs.environment == 'uat' }}
@@ -185,13 +266,26 @@ jobs:
           fi
 
       - name: Verify monitoring stack
-        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_OVERLAY == 'true' }}
+        if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_HELM_VALUES == 'true' }}
         run: |
           if kubectl get namespace monitoring >/dev/null 2>&1; then
             kubectl get pods -n monitoring
+            kubectl get ds -n monitoring falco
             kubectl get svc -n monitoring
+            helm list -n monitoring
             kubectl get ingress -n monitoring
             kubectl get certificate -n monitoring || true
+
+            PROM_POD="$(kubectl get pods -n monitoring -o name | grep '^pod/prometheus-server-' | head -n1 | cut -d/ -f2)"
+            if [ -z "$PROM_POD" ]; then
+              echo "::error title=Prometheus missing::No prometheus server pod found in monitoring namespace"
+              exit 1
+            fi
+
+            kubectl get pod -n monitoring "$PROM_POD" -o jsonpath='{.metadata.annotations.sidecar\.istio\.io/status}' | grep -q 'istio-proxy'
+            echo "Prometheus sidecar check passed for pod: $PROM_POD"
+
+            kubectl run prom-down-count --rm -i --restart=Never -n monitoring --image=curlimages/curl:8.8.0 --command -- sh -c 'DOWN=$(curl -sS http://prometheus-server.monitoring.svc.cluster.local/api/v1/targets?state=active | grep -o '"'"'"health":"down"'"'"' | wc -l); echo "active_down_targets=$DOWN"; [ "$DOWN" -eq 0 ]'
           else
             echo "::warning title=Namespace missing::Namespace 'monitoring' not found. Verification skipped."
           fi

@@ -1,0 +1,29 @@
+podAnnotations:
+  sidecar.istio.io/inject: "false"
+
+driver:
+  kind: modern_ebpf
+
+falcoctl:
+  artifact:
+    install:
+      enabled: false
+    follow:
+      enabled: false
+
+falco:
+  config_files: []
+
+customRules:
+  falco_rules.local.yaml: |-
+    - rule: Terminal Shell In Container
+      desc: Detect interactive shell execution in a container
+      condition: container and spawned_process and shell_procs and proc.tty != 0
+      output: "Terminal shell in container (user=%user.name pod=%k8s.pod.name ns=%k8s.ns.name cmd=%proc.cmdline)"
+      priority: WARNING
+
+    - rule: Write Below Etc In Container
+      desc: Detect writes under /etc in containers
+      condition: container and open_write and fd.name startswith /etc/
+      output: "Container write below /etc (pod=%k8s.pod.name ns=%k8s.ns.name file=%fd.name proc=%proc.name)"
+      priority: WARNING
