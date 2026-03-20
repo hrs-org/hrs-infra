@@ -12,7 +12,24 @@ falcoctl:
       enabled: false
 
 falco:
+  json_output: true
+  webserver:
+    enabled: true
+    prometheus_metrics_enabled: true
   config_files: []
+
+metrics:
+  enabled: true
+  interval: 1m
+
+falcosidekick:
+  enabled: true
+  config:
+    customfields: "cluster:hrsm-uat"
+    alertmanager:
+      hostport: "http://alertmanager.monitoring.svc.cluster.local:9093"
+      endpoint: "/api/v2/alerts"
+      minimumpriority: "warning"
 
 customRules:
   falco_rules.local.yaml: |-
@@ -24,6 +41,6 @@ customRules:
 
     - rule: Write Below Etc In Container
       desc: Detect writes under /etc in containers
-      condition: container and open_write and fd.name startswith /etc/
+      condition: container and open_write and fd.name startswith /etc/ and container.name != "istio-proxy"
       output: "Container write below /etc (pod=%k8s.pod.name ns=%k8s.ns.name file=%fd.name proc=%proc.name)"
       priority: WARNING
