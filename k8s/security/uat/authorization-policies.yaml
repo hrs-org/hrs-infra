@@ -70,23 +70,6 @@ spec:
 apiVersion: security.istio.io/v1beta1
 kind: AuthorizationPolicy
 metadata:
-  name: allow-to-email
-  namespace: uat
-spec:
-  selector:
-    matchLabels:
-      app: hrs-email-service
-  action: ALLOW
-  rules:
-    - from:
-        - source:
-            principals:
-              - cluster.local/ns/uat/sa/hrs-gateway-sa
-              - cluster.local/ns/uat/sa/hrs-user-service-sa
----
-apiVersion: security.istio.io/v1beta1
-kind: AuthorizationPolicy
-metadata:
   name: allow-to-user
   namespace: uat
 spec:

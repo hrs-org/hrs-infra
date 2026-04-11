@@ -156,6 +156,18 @@ jobs:
         if: ${{ github.event.inputs.applySecurityPolicies == 'true' && env.HAS_SECURITY_PATH != 'true' }}
         run: echo "::warning title=Security policies skipped::Overlay path '$SECURITY_PATH' does not exist."
 
+      - name: Remove retired email service resources
+        run: |
+          TARGET_NS="${{ github.event.inputs.environment }}"
+          if kubectl get namespace "$TARGET_NS" >/dev/null 2>&1; then
+            kubectl -n "$TARGET_NS" delete deployment hrs-email-service --ignore-not-found=true
+            kubectl -n "$TARGET_NS" delete service hrs-email-service --ignore-not-found=true
+            kubectl -n "$TARGET_NS" delete authorizationpolicy allow-to-email --ignore-not-found=true
+            kubectl -n "$TARGET_NS" delete serviceaccount hrs-email-service-sa --ignore-not-found=true
+          else
+            echo "::warning title=Namespace missing::Namespace '$TARGET_NS' not found. Email service cleanup skipped."
+          fi
+
       - name: Validate monitoring secret inputs
         if: ${{ github.event.inputs.applyMonitoringStack == 'true' && env.HAS_MONITORING_HELM_VALUES == 'true' }}
         env:
