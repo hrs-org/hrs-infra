@@ -284,6 +284,26 @@ jobs:
             kubectl get ingress -n monitoring
             kubectl get certificate -n monitoring || true
 
+            falco_desired_ready="$(kubectl get ds -n monitoring falco -o jsonpath='{.status.desiredNumberScheduled}/{.status.numberReady}')"
+            if [ "$falco_desired_ready" != "3/3" ]; then
+              echo "::error title=Falco not ready::DaemonSet readiness is $falco_desired_ready, expected 3/3"
+              exit 1
+            fi
+
+            falco_pod_count="$(kubectl get pods -n monitoring -l app.kubernetes.io/name=falco --no-headers | wc -l | tr -d ' ')"
+            falco_ready_count="$(kubectl get pods -n monitoring -l app.kubernetes.io/name=falco --no-headers | awk '$2 == "1/1" && $3 == "Running" {count++} END {print count + 0}')"
+            echo "Falco pods ready: $falco_ready_count/$falco_pod_count"
+            if [ "$falco_pod_count" -eq 0 ] || [ "$falco_ready_count" -ne "$falco_pod_count" ]; then
+              echo "::error title=Falco pods not ready::Expected all Falco pods to be Running and 1/1 ready"
+              exit 1
+            fi
+
+            if kubectl logs -n monitoring -l app.kubernetes.io/name=falco --tail=200 | grep -Ei 'panic|fatal|traceback|error.*(driver|syscall|init)' >/dev/null 2>&1; then
+              echo "::error title=Falco log errors::Recent Falco logs contain startup/runtime errors"
+              kubectl logs -n monitoring -l app.kubernetes.io/name=falco --tail=200
+              exit 1
+            fi
+
             kubectl rollout status deploy/prometheus-server -n monitoring --timeout=10m
             kubectl rollout status deploy/grafana -n monitoring --timeout=10m
             kubectl rollout status statefulset/loki -n monitoring --timeout=10m
@@ -303,15 +323,29 @@ jobs:
             sleep_seconds=15
             attempt=1
             while [ "$attempt" -le "$max_attempts" ]; do
-              DOWN="$(kubectl get --raw '/api/v1/namespaces/monitoring/services/http:prometheus-server:80/proxy/api/v1/targets?state=active' | grep -o '"health":"down"' | wc -l | tr -d ' ')"
+              if ! command -v jq >/dev/null 2>&1; then
+                echo "::error title=Missing dependency::jq is required for Prometheus target verification"
+                exit 1
+              fi
+
+              TARGETS_JSON="$(kubectl get --raw '/api/v1/namespaces/monitoring/services/http:prometheus-server:80/proxy/api/v1/targets?state=active')"
+              DOWN_DETAILS="$(echo "$TARGETS_JSON" | jq -r '.data.activeTargets[] | select(.health=="down") | [.labels.job // "unknown", .labels.instance // "unknown", .scrapeUrl // "unknown", .lastError // ""] | @tsv')"
+
+              if [ -n "$DOWN_DETAILS" ]; then
+                echo "down_targets_detail (job\tinstance\tscrapeUrl\tlastError):"
+                echo "$DOWN_DETAILS"
+              fi
+
+              DOWN="$(echo "$TARGETS_JSON" | jq '[.data.activeTargets[] | select(.health=="down") | select(((.scrapeUrl // "") | test(":15090/metrics$")) and ((.lastError // "") | contains("404 Not Found")) | not)] | length')"
               DOWN="${DOWN:-0}"
-              echo "active_down_targets=$DOWN (attempt $attempt/$max_attempts)"
+              echo "unexpected_active_down_targets=$DOWN (attempt $attempt/$max_attempts)"
+
               if [ "$DOWN" -eq 0 ]; then
-                echo "Prometheus target health check passed"
+                echo "Prometheus target health check passed (no unexpected down targets)"
                 break
               fi
               if [ "$attempt" -eq "$max_attempts" ]; then
-                echo "::error title=Prometheus targets unhealthy::active_down_targets=$DOWN after $max_attempts attempts"
+                echo "::error title=Prometheus targets unhealthy::unexpected_active_down_targets=$DOWN after $max_attempts attempts"
                 exit 1
               fi
               sleep "$sleep_seconds"
