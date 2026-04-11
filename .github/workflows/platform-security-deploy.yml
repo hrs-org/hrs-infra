@@ -284,6 +284,12 @@ jobs:
             kubectl get ingress -n monitoring
             kubectl get certificate -n monitoring || true
 
+            kubectl rollout status deploy/prometheus-server -n monitoring --timeout=10m
+            kubectl rollout status deploy/grafana -n monitoring --timeout=10m
+            kubectl rollout status statefulset/loki -n monitoring --timeout=10m
+            kubectl rollout status daemonset/promtail -n monitoring --timeout=10m
+            kubectl rollout status daemonset/falco -n monitoring --timeout=10m
+
             PROM_POD="$(kubectl get pods -n monitoring -o name | grep '^pod/prometheus-server-' | head -n1 | cut -d/ -f2)"
             if [ -z "$PROM_POD" ]; then
               echo "::error title=Prometheus missing::No prometheus server pod found in monitoring namespace"
@@ -293,7 +299,24 @@ jobs:
             kubectl get pod -n monitoring "$PROM_POD" -o jsonpath='{.metadata.annotations.sidecar\.istio\.io/status}' | grep -q 'istio-proxy'
             echo "Prometheus sidecar check passed for pod: $PROM_POD"
 
-            kubectl run prom-down-count --rm -i --restart=Never -n monitoring --image=curlimages/curl:8.8.0 --command -- sh -c 'DOWN=$(curl -sS http://prometheus-server.monitoring.svc.cluster.local/api/v1/targets?state=active | grep -o '"'"'"health":"down"'"'"' | wc -l); echo "active_down_targets=$DOWN"; [ "$DOWN" -eq 0 ]'
+            max_attempts=20
+            sleep_seconds=15
+            attempt=1
+            while [ "$attempt" -le "$max_attempts" ]; do
+              DOWN="$(kubectl get --raw '/api/v1/namespaces/monitoring/services/http:prometheus-server:80/proxy/api/v1/targets?state=active' | grep -o '"health":"down"' | wc -l | tr -d ' ')"
+              DOWN="${DOWN:-0}"
+              echo "active_down_targets=$DOWN (attempt $attempt/$max_attempts)"
+              if [ "$DOWN" -eq 0 ]; then
+                echo "Prometheus target health check passed"
+                break
+              fi
+              if [ "$attempt" -eq "$max_attempts" ]; then
+                echo "::error title=Prometheus targets unhealthy::active_down_targets=$DOWN after $max_attempts attempts"
+                exit 1
+              fi
+              sleep "$sleep_seconds"
+              attempt=$((attempt + 1))
+            done
           else
             echo "::warning title=Namespace missing::Namespace 'monitoring' not found. Verification skipped."
           fi
